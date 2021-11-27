@@ -2,6 +2,7 @@ import pickle
 import numpy as np
 import tensorflow as tf
 import csv
+import requests
 import os
 
 def get_data(cat_path,image_path,new_path):
@@ -73,6 +74,12 @@ def get_data(cat_path,image_path,new_path):
 	cat_array = altogether[1]
 
 	#TODO: replace links with image arrays
+	for i in image_array:
+		i = requests.get(i).content
+		print(i)#bytes
+	print(image_array.shape)
+
+	#TODO: pad images
 
 	#normalization
 	#reshaped_inputs = subset_inputs.reshape(subset_inputs.shape[0],3,32,32).transpose(0,2,3,1).astype("float")
