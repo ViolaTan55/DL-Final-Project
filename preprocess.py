@@ -10,17 +10,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 "reference to turn images to bytes: https://github.com/gskielian/JPG-PNG-to-MNIST-NN-Format/blob/master/convert-images-to-mnist-format.py"
 
-filename = "./data/inputs-ubytes"
-
-
 
 def download(url):
 	i = requests.get(url).content
-	#print(type(i))
-	#i = np.array([i])
-	#print(type(i))
-	#print(i.shape)
-	return i
+
+	# might need this if we want to populate a second array with integers
+	# j = np.array(int.from_bytes(i, "little"))
+
+	return j
 
 def early_processing(cat_path,image_path, images, labels):
 	"""
