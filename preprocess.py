@@ -12,10 +12,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 filename = "./data/inputs-ubytes"
 
+
+
 def download(url):
-	with gzip.open(filename, 'wb') as f:
-		i = requests.get(url).content
-		f.write(i)
+	i = requests.get(url).content
+	#print(type(i))
+	#i = np.array([i])
+	#print(type(i))
+	#print(i.shape)
+	return i
 
 def early_processing(cat_path,image_path, images, labels):
 	"""
@@ -27,7 +32,8 @@ def early_processing(cat_path,image_path, images, labels):
 	id2image2 = {}
 	image2id = {}
 
-	#categories sheet
+
+	# categories sheet
 	with open(cat_path, newline='') as f:
 		reader = csv.reader(f)
 		for row in reader:
@@ -36,7 +42,7 @@ def early_processing(cat_path,image_path, images, labels):
 			except:
 				id2cat[row[0]] = [row[1]]
 
-	#image sheet
+	# image sheet
 	with open(image_path, newline='') as f2:
 		reader = csv.reader(f2)
 		for row in reader:
@@ -54,7 +60,7 @@ def early_processing(cat_path,image_path, images, labels):
 				print('initializing',id2image[value],value,key) """
 
 
-	#writing to csv
+	# writing to csv
 	"""write=[]
 	for id in id2image:
 		writing={}
@@ -67,7 +73,7 @@ def early_processing(cat_path,image_path, images, labels):
 		writer.writeheader()
 		writer.writerows(write)"""
 
-	#convert two dictionaries to one 2d array
+	# convert two dictionaries to one 2d array
 	image2cat = []
 	for id in id2image:
 		try:
@@ -75,23 +81,34 @@ def early_processing(cat_path,image_path, images, labels):
 		except:
 			pass
 
-
-	#convert one array into two arrays
+	# convert one array into two arrays
 	altogether = np.array(image2cat).T
 	image_array = altogether[0]
 	cat_array = altogether[1]
 
-	#download images
-	with ThreadPoolExecutor(max_workers=14) as executor:
-		executor.map(download, image_array)
+	big_bad_array = []
+	# download images
 
-	#convert cat array into a byte array
+	print("starting downloading")
+	with ThreadPoolExecutor(max_workers=14) as executor:
+		big_bad_array = executor.map(download, image_array)
+
+	print(np.array(big_bad_array).shape)
+
+	print("writing to gz file")
+	# write byte img_file into a file
+	with gzip.open(images, 'wb') as f:
+		for bba in big_bad_array:
+
+			f.write(bba)
+
+	# convert cat array into a bytes
 	cat2byte = []
 	for c in cat_array:
 		for word in c:
 			cat2byte.append(bytes(word, "ascii"))
 
-	#write byte cat_array into a file
+	# write byte cat_array into a file
 	with gzip.open(labels, 'wb') as f2:
 		for c in cat2byte:
 			f2.write(c)
@@ -99,26 +116,29 @@ def early_processing(cat_path,image_path, images, labels):
 
 def get_data(cat_path,image_path, images, labels):
 	# obtain the images and labels gz files ONCE
-	" early_processing(cat_path, image_path, images, labels) "
+	early_processing(cat_path, image_path, images, labels)
 
 	# read from images gz file
-	# bug: problem writing the images gz file, and thus problem reading from it
+	# bug: I think this works, but it takes forever
+	# multi threading might also be possible here, but would need locks
+	# possible implementation of file reading lock: https://blog.majid.info/a-reader-writer-lock-for-python/
 	"""with open(images, 'rb') as f, gzip.GzipFile(fileobj=f) as bytestream:
 		img_array = np.frombuffer(bytestream.read(), dtype=np.uint8)
 	"""
 
-	#read from labels gx file
+	# read from labels gx file
 	with open(labels, 'rb') as f2, gzip.GzipFile(fileobj=f2) as bytestream2:
-		cat_array = np.frombuffer(bytestream2.read(), dtype = np.uint8)
+		cat_array = np.frombuffer(bytestream2.read(), dtype=np.uint8)
+
+#	print(np.arr(img_array).shape)
+
+	# TODO: pad images
+	# normalization
+	# reshaped_inputs = subset_inputs.reshape(subset_inputs.shape[0],3,32,32).transpose(0,2,3,1).astype("float")
+	# normalized_inputs = reshaped_inputs / 255
 
 
-	#TODO: pad images
-	#normalization
-	#reshaped_inputs = subset_inputs.reshape(subset_inputs.shape[0],3,32,32).transpose(0,2,3,1).astype("float")
-	#normalized_inputs = reshaped_inputs / 255
-
-
-	return cat_array #,img_array
+	return cat_array #, img_array
 
 get_data( "./data/categories.csv", "./data/images.csv", "./data/inputs-ubytes", "./data/labels-ubytes")
 
