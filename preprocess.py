@@ -5,30 +5,67 @@ import csv
 import gzip
 import requests
 import os
+from PIL import Image
+from io import BytesIO
+import math
 from concurrent.futures import ThreadPoolExecutor
-
 
 "reference to turn images to bytes: https://github.com/gskielian/JPG-PNG-to-MNIST-NN-Format/blob/master/convert-images-to-mnist-format.py"
 
+MAX_HEIGHT = 480
+MAX_WIDTH = 640
 
-def download(url):
-	i = requests.get(url).content
+def pad(arr):
+	if arr.shape[0]>MAX_HEIGHT:
+		print('too high',arr.shape[0])
+	if arr.shape[1]>MAX_WIDTH:
+		print('too wide',arr.shape[1])
+	padding_Y_before = (MAX_HEIGHT-arr.shape[0])/2
+	padding_Y_after = math.floor(padding_Y_before)
+	if(padding_Y_before - padding_Y_after != 0):
+		padding_Y = (padding_Y_after,padding_Y_after+1)
+	else:
+		padding_Y = (padding_Y_after,padding_Y_after)
 
-	# might need this if we want to populate a second array with integers
-	# j = np.array(int.from_bytes(i, "little"))
+	padding_X_before = (MAX_WIDTH-arr.shape[1])/2
+	padding_X_after = math.floor(padding_X_before)
+	if(padding_X_before - padding_X_after != 0):
+		padding_X = (padding_X_after,padding_X_after+1)
+	else:
+		padding_X = (padding_X_after,padding_X_after)
+	#print(padding_Y,padding_X)
+	arr = np.pad(arr,[padding_Y,padding_X,(0,0)],mode='constant')
+	return arr
 
-	return j
+def download_and_pad(url):
+	try:
+		b = requests.get(url)
+		img =Image.open(BytesIO(b.content))
+		arr = np.asarray(img)
+		pad_arr = pad(arr)
+	except:
+		pad_arr = np.zeros((640,480))
+	return pad_arr
 
-def early_processing(cat_path,image_path, images, labels):
-	"""
-	Given a file path, returns an array of
-	normalized inputs (images) and an array of labels.
-	"""
+def download_images_from_links(image_array, npy_file_path):
+	print("starting downloading")
+	with ThreadPoolExecutor(max_workers=14) as executor:
+		big_gen = executor.map(download_and_pad, image_array) #generator
+	
+	#pad images
+	big_list = list(big_gen)
+	big_array = np.array(big_list)
+	np.save(npy_file_path,big_array)
+
+	return None
+
+def early_processing(cat_path,image_path,cat_out_path):
+	""" only run ONCE """
+	""" rearrange inputs and labels, download images from links """
+
 	id2cat = {}
 	id2image = {}
-	id2image2 = {}
 	image2id = {}
-
 
 	# categories sheet
 	with open(cat_path, newline='') as f:
@@ -46,29 +83,6 @@ def early_processing(cat_path,image_path, images, labels):
 			image2id[row[1]]=row[0]
 
 		id2image = dict([(value,key)for key,value in image2id.items()])
-		""" for key,value in image2id.items():
-			try:
-				assert value in id2image
-				id2image[value].append(key)
-				print('appending',id2image[value],value,key)
-				break
-			except:
-				id2image[value]=key
-				print('initializing',id2image[value],value,key) """
-
-
-	# writing to csv
-	"""write=[]
-	for id in id2image:
-		writing={}
-		writing['event_id'] = id
-		writing['image'] = id2image[id]
-		write.append(writing)
-
-	with open(new_path, 'w') as new:
-		writer = csv.DictWriter(new, fieldnames=('event_id', 'image'))
-		writer.writeheader()
-		writer.writerows(write)"""
 
 	# convert two dictionaries to one 2d array
 	image2cat = []
@@ -83,60 +97,90 @@ def early_processing(cat_path,image_path, images, labels):
 	image_array = altogether[0]
 	cat_array = altogether[1]
 
-	big_bad_array = []
-	# download images
+	download_images_from_links(image_array,'d:/DeepLearning/FinalProj/data/inputs.npy')
+	np.save(cat_out_path,cat_array)
 
-	print("starting downloading")
-	with ThreadPoolExecutor(max_workers=14) as executor:
-		big_bad_array = executor.map(download, image_array)
+	return None
 
-	print(np.array(big_bad_array).shape)
+#early_processing('d:/DeepLearning/FinalProj/data/categories.csv','d:/DeepLearning/FinalProj/data/images.csv','d:/DeepLearning/FinalProj/data/labels.npy')
 
-	print("writing to gz file")
-	# write byte img_file into a file
-	with gzip.open(images, 'wb') as f:
-		for bba in big_bad_array:
+def print_unique(cat_array):
+	unique_cats = []
+	for row in cat_array:
+		for element in row:
+			if element not in unique_cats:
+				unique_cats.append(element)
+	return unique_cats
 
-			f.write(bba)
+def sort_labels(cat_array):
+	this_cat = []
+	for lst in cat_array:
+		this_lst = []
+		for element in lst:
+			if element in ['Art', 'Arts & Crafts', 'Art in the Parks: Celebrating 50 Years', 'Art in the Parks: UNIQLO Park Expressions Grant']:
+				element = 1
 
-	# convert cat array into a bytes
-	cat2byte = []
-	for c in cat_array:
-		for word in c:
-			cat2byte.append(bytes(word, "ascii"))
+			if element in ['GreenThumb Events', 'GreenThumb Partner Events', 'GreenThumb 40th Anniversary', 'GreenThumb Workshops']:
+				element = 2
 
-	# write byte cat_array into a file
-	with gzip.open(labels, 'wb') as f2:
-		for c in cat2byte:
-			f2.write(c)
+			if element in ['Festivals', 'Historic House Trust Festival', "Valentine's Day", 'Halloween', "Saint Patrick's Day", 'Earth Day & Arbor Day', "Mother's Day", "Father's Day", 'Holiday Lightings', "Santa's Coming to Town", 'Lunar New Year', 'Pumpkin Fest', 'Summer Solstice Celebrations', 'Easter', 'Fall Festivals', "New Year's Eve", 'Winter Holidays', 'Thanksgiving', 'National Night Out']:
+				element = 3
+			
+			if element in ['Volunteer', 'MillionTreesNYC: Volunteer: Tree Stewardship and Care', 'Martin Luther King Jr. Day of Service', 'MillionTreesNYC: Volunteer: Tree Planting']:
+				element = 4
 
+			if element in ['Film', 'Free Summer Movies', 'Theater', 'Free Summer Theater', 'Movies Under the Stars', 'Concerts', 'Free Summer Concerts', 'SummerStage']:
+				element = 5
+			
+			if element in ['Fitness', 'Outdoor Fitness', 'Running', 'Bike Month NYC', 'Hiking', 'Learn To Ride', 'Sports', 'Kayaking and Canoeing', 'National Trails Day', 'Brooklyn Beach Sports Festival', 'Summer Sports Experience', 'Fishing', 'Girls and Women in Sports', 'Bocce Tournament']:
+				element = 6
 
-def get_data(cat_path,image_path, images, labels):
-	# obtain the images and labels gz files ONCE
-	early_processing(cat_path, image_path, images, labels)
+			if element in ['Best for Kids', 'Kids Week', 'CityParks Kids Arts', 'School Break', 'Family Camping', 'CityParks PuppetMobile', 'Dogs']:
+				element = 7
 
-	# read from images gz file
-	# bug: I think this works, but it takes forever
-	# multi threading might also be possible here, but would need locks
-	# possible implementation of file reading lock: https://blog.majid.info/a-reader-writer-lock-for-python/
-	"""with open(images, 'rb') as f, gzip.GzipFile(fileobj=f) as bytestream:
-		img_array = np.frombuffer(bytestream.read(), dtype=np.uint8)
-	"""
+			if element in ['Black History Month', "Women's History Month", 'LGBTQ Pride Month', 'Hispanic Heritage Month', 'Native American Heritage Month', 'Fourth of July', 'City of Water Day', "She's On Point"]:
+				element = 8
 
-	# read from labels gx file
-	with open(labels, 'rb') as f2, gzip.GzipFile(fileobj=f2) as bytestream2:
-		cat_array = np.frombuffer(bytestream2.read(), dtype=np.uint8)
+			if element in ['History', 'Historic House Trust Sites', 'Arts, Culture & Fun Series', 'Shakespeare in the Parks']:
+				element = 9
 
-#	print(np.arr(img_array).shape)
+			if element in ['Open House New York', 'Community Input Meetings', 'Dogs in Parks: Town Hall', 'Parks Without Borders']:
+				element = 10
+			
+			if element in ['Nature', 'Birding', 'Wildlife', 'Wildflower Week', 'Cherry Blossom Festivals', 'Waterfront', 'Rockaway Beach', 'Bronx River Greenway', 'Fall Foliage', 'Summer on the Hudson', 'Living With Deer in New York City']:
+				element = 11
 
-	# TODO: pad images
+			if element in ['Talks', 'Education', 'Astronomy', 'Partnerships for Parks Tree Workshops']:
+				element = 12
+
+			if element in ['Seniors', 'Accessible']:
+				element = 13
+
+			if element in ['Dance', 'Games', 'Recreation Center Open House', 'NYC Parks Senior Games', 'Mobile Recreation Van Event', 'Fireworks', 'Tours', 'Freshkills Tours']:
+				element = 14
+
+			if element in ['Markets', 'Food']:
+				element = 15
+
+			if element in ['Northern Manhattan Parks', 'Fort Tryon Park Trust', "It's My Park", 'Poe Park Visitor Center', 'Shape Up New York', 'Freshkills Park', 'Freshkills Featured Events', 'Urban Park Rangers', 'City Parks Foundation', 'Reforestation Stewardship', 'Forest Park Trust', 'City Parks Foundation Adults', 'Partnerships for Parks Training and Grant Deadlines', 'My Summer House NYC', 'Community Parks Initiative', 'Anchor Parks']:
+				element = 16
+			this_lst.append(element)
+		this_cat.append(this_lst)
+	return np.array(this_cat)
+
+def get_data(image_path,cat_path):
+
+	cat_array = np.load(cat_path,allow_pickle=True)
+	img_array = np.load(image_path,allow_pickle=True)
+
+	this_cat = sort_labels(cat_array)
+
 	# normalization
 	# reshaped_inputs = subset_inputs.reshape(subset_inputs.shape[0],3,32,32).transpose(0,2,3,1).astype("float")
 	# normalized_inputs = reshaped_inputs / 255
 
+	return this_cat, img_array
 
-	return cat_array #, img_array
+get_data( "#./data/inputs.npy", "./data/labels.npy")
 
-get_data( "./data/categories.csv", "./data/images.csv", "./data/inputs-ubytes", "./data/labels-ubytes")
-
-#get_data('d:/DeepLearning/FinalProj/categories.csv','d:/DeepLearning/FinalProj/images.csv','d:/DeepLearning/FinalProj/new.csv')
+#get_data('d:/DeepLearning/FinalProj/data/inputs.npy','d:/DeepLearning/FinalProj/data/labels.npy')
